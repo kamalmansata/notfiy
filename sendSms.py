@@ -12,9 +12,16 @@ import sys
 import json
 import logging
 import platform
+import os
+from requests.exceptions import ConnectionError
 from twilio.rest import Client
+from twilio.base.exceptions import TwilioRestException
+from twilio.http.http_client import TwilioHttpClient
 
 logging.basicConfig(level=logging.ERROR, format=" [%(asctime)s][%(levelname)s] %(message)s")
+
+CFGFILE = os.path.join(os.path.dirname(os.path.realpath(__file__)), "config.json")
+logging.debug("Loading configuration file {} ".format(CFGFILE))
 
 try:
     CONFIG = json.loads(open('config.json').read())
@@ -22,9 +29,17 @@ try:
 except IOError:
     logging.critical("Configuration file not found! \
     Please make sure config.json file is in same directory")
-    exit(1)
+    sys.exit(1)
 
-client = Client(CONFIG['account'], CONFIG['token'])
+client = ""
+try:
+    proxy_client = TwilioHttpClient()
+    # assuming your proxy is available via the standard env var https_proxy:
+    ## (this is the case on pythonanywhere)
+    proxy_client.session.proxies = {'https': os.environ['https_proxy']}
+    client = Client(CONFIG['account'], CONFIG['token'], http_client=proxy_client)
+except KeyError:
+	client = Client(CONFIG['account'], CONFIG['token'])
 
 def send_sms(msg_body, to_num = CONFIG['to_default']):
     '''
@@ -33,14 +48,19 @@ def send_sms(msg_body, to_num = CONFIG['to_default']):
     try:
         logging.debug("To : {}, From : {}, Message is : {}".format(to_num, CONFIG['from'], msg))
         client.messages.create(to=to_num, from_=CONFIG['from'], body=msg_body)
+    except ConnectionError:
+        logging.error("Opps !! Check you Internet connection. \n{}".format(sys.exc_info()))
+    except TwilioRestException:
+        logging.error("Opps!! Check your credentials in config file : \
+         {} or server issue \n{}".format(CFGFILE, sys.exc_info()))
     except:
-        logging.error("Opps !! Check you Internet connection after that credentials ....")
+        logging.error("Something unexpected happend! Check error \n{}".format(sys.exc_info()))
     else:
         logging.info("Message has been sent sucessfully")
 
 def usage():
-    ''' This is the help function to print usage'''
-    print '''
+    ''' This is the help function to print usage
+
     This program helps to send sms notification to specified mobile.
 
     usage :
