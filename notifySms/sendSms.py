@@ -11,6 +11,7 @@
 import sys
 import json
 import logging
+import base64
 import platform
 import os
 from requests.exceptions import ConnectionError
@@ -24,7 +25,7 @@ CFGFILE = os.path.join(os.path.dirname(os.path.realpath(__file__)), "config.json
 logging.debug("Loading configuration file {} ".format(CFGFILE))
 
 try:
-    CONFIG = json.loads(open('config.json').read())
+    CONFIG = json.loads(open(CFGFILE).read())
     logging.debug(CONFIG)
 except IOError:
     logging.critical("Configuration file not found! \
@@ -37,22 +38,31 @@ try:
     # assuming your proxy is available via the standard env var https_proxy:
     ## (this is the case on pythonanywhere)
     proxy_client.session.proxies = {'https': os.environ['https_proxy']}
-    client = Client(CONFIG['account'], CONFIG['token'], http_client=proxy_client)
+    client = Client(base64.b64decode(CONFIG['account']), base64.b64decode(CONFIG['token']), http_client=proxy_client)
 except KeyError:
-	client = Client(CONFIG['account'], CONFIG['token'])
+    try:
+        client = Client(base64.b64decode(CONFIG['account']), base64.b64decode(CONFIG['token']))
+    except TypeError:
+        logging.error("Please check your config file as properly base64 encoded content")
+except TypeError:
+    logging.error("Please check your config file as properly base64 encoded content")
 
-def send_sms(msg_body, to_num = CONFIG['to_default']):
+def send_sms(msg_body, to_num=None):
     '''
     This function is used to send message with give mobile number and message
     '''
     try:
-        logging.debug("To : {}, From : {}, Message is : {}".format(to_num, CONFIG['from'], msg))
+        if to_num == None:
+            to_num = base64.b64decode(CONFIG['to_default'])
+        logging.debug("To : {}, From : {}, Message is : {}".format(to_num, CONFIG['from'], msg_body))
         client.messages.create(to=to_num, from_=CONFIG['from'], body=msg_body)
     except ConnectionError:
         logging.error("Opps !! Check you Internet connection. \n{}".format(sys.exc_info()))
     except TwilioRestException:
         logging.error("Opps!! Check your credentials in config file : \
          {} or server issue \n{}".format(CFGFILE, sys.exc_info()))
+    except TypeError:
+        logging.error("Please check your config file as properly base64 encoded content")
     except:
         logging.error("Something unexpected happend! Check error \n{}".format(sys.exc_info()))
     else:

@@ -1,6 +1,6 @@
 {
-    "account" : "ABC1234",
-    "token" : "DEF4567",
-    "from" : "+12345678910",
-    "to_default" : "+91999999999"
+    "account" : "_encoded content with base64.b64encode original content :  ABC1234",
+    "token" : "_encoded content with base64.b64encode original content :  DEF4567",
+    "from" : "original content :  +12345678910",
+    "to_default" : "_encoded content with base64.b64encode original content : i.e. +91999999999"
 }
