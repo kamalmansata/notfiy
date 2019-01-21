@@ -15,11 +15,30 @@ import base64
 import platform
 import os
 from requests.exceptions import ConnectionError
-from twilio.rest import Client
-from twilio.base.exceptions import TwilioRestException
-from twilio.http.http_client import TwilioHttpClient
+import requests
+import json
 
 logging.basicConfig(level=logging.ERROR, format=" [%(asctime)s][%(levelname)s] %(message)s")
+
+# get request
+def send_way2sms(phoneNo, textMessage):
+  reqUrl = 'http://www.way2sms.com/api/v1/sendCampaign'
+  try:
+    req_params = {
+    'apikey':os.environ['apikey'],
+    'secret':os.environ['secret'],
+    'usetype': "stage",
+    'phone': phoneNo,
+    'message':textMessage,
+    'senderid':phoneNo
+    }
+  except KeyError:
+      logging.error("Unable to find API key / Secret token in environment variable \
+                    Please set 'apikey' and 'secret' environment variables")
+      return None
+  except:
+        logging.error("Something unexpected happend! Way2Sms Check error \n{}".format(sys.exc_info()))
+  return requests.post(reqUrl, req_params).text
 
 CFGFILE = os.path.join(os.path.dirname(os.path.realpath(__file__)), "config.json")
 logging.debug("Loading configuration file {} ".format(CFGFILE))
@@ -32,41 +51,55 @@ except IOError:
     Please make sure config.json file is in same directory")
     sys.exit(1)
 
-client = ""
-try:
-    proxy_client = TwilioHttpClient()
-    # assuming your proxy is available via the standard env var https_proxy:
-    ## (this is the case on pythonanywhere)
-    proxy_client.session.proxies = {'https': os.environ['https_proxy']}
-    client = Client(base64.b64decode(CONFIG['account']), base64.b64decode(CONFIG['token']), http_client=proxy_client)
-except KeyError:
+def send_twilio(to,body):
+    from twilio.rest import Client
+    from twilio.base.exceptions import TwilioRestException
+    from twilio.http.http_client import TwilioHttpClient
+    client = "" #Client(base64.b64decode(CONFIG['account']), base64.b64decode(CONFIG['token']))
     try:
-        client = Client(base64.b64decode(CONFIG['account']), base64.b64decode(CONFIG['token']))
-    except TypeError:
-        logging.error("Please check your config file as properly base64 encoded content")
-except TypeError:
-    logging.error("Please check your config file as properly base64 encoded content")
+        proxy_client = TwilioHttpClient()
+        # assuming your proxy is available via the standard env var https_proxy:
+        ## (this is the case on pythonanywhere)
+        proxy_client.session.proxies = {'https': os.environ['https_proxy']}
+        client = Client(base64.b64decode(CONFIG['account']), base64.b64decode(CONFIG['token']), http_client=proxy_client)
+    except KeyError:
+        try:
+            client = Client(base64.b64decode(CONFIG['account']), base64.b64decode(CONFIG['token']))
+            return client.messages.create(to=to, from_=CONFIG['from'], body=body)
+        except TypeError:
+            logging.error("Please check your config file as properly base64 encoded content")
+        except ConnectionError:
+            logging.error("Opps !! Check you Internet connection. \n{}".format(sys.exc_info()))
+        except TwilioRestException:
+            logging.error("Opps!! Check your credentials in config file : \
+            {} or server issue \n{}".format(CFGFILE, sys.exc_info()))
+        except TypeError:
+            logging.error("Please check your config file as properly base64 encoded content")
 
-def send_sms(msg_body, to_num=None):
+
+def send_sms(msg_body, to_num=base64.b64decode(CONFIG['to_default'])):
     '''
     This function is used to send message with give mobile number and message
     '''
+    way2sms = False
     try:
-        if to_num == None:
-            to_num = base64.b64decode(CONFIG['to_default'])
+        logging.info("Checking way2sms environment variable : " + os.environ['way2sms'])
+        way2sms = True
+    except KeyError:
+        logging.info("Way2SMS not set, Fall back to twilio..")
+    try:
         logging.debug("To : {}, From : {}, Message is : {}".format(to_num, CONFIG['from'], msg_body))
-        client.messages.create(to=to_num, from_=CONFIG['from'], body=msg_body)
-    except ConnectionError:
-        logging.error("Opps !! Check you Internet connection. \n{}".format(sys.exc_info()))
-    except TwilioRestException:
-        logging.error("Opps!! Check your credentials in config file : \
-         {} or server issue \n{}".format(CFGFILE, sys.exc_info()))
-    except TypeError:
-        logging.error("Please check your config file as properly base64 encoded content")
+        if way2sms == True:
+            response = send_way2sms(to_num[3:],msg_body)
+        else:
+            response = send_twilio(to_num,msg_body)
+        logging.info("Response: " + str(response))
+        if response == None :
+            logging.error("Error while sending message, check error.")
+        else:
+            logging.info("Message has been sent sucessfully")
     except:
         logging.error("Something unexpected happend! Check error \n{}".format(sys.exc_info()))
-    else:
-        logging.info("Message has been sent sucessfully")
 
 def usage():
     ''' This is the help function to print usage
